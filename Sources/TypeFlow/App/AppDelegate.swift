@@ -9,8 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyManager: HotkeyManager?
     private let audioRecorder = AudioRecorder()
     private var whisperEngine: WhisperEngine?
+    private let llmService = LLMService()
+    private let textOutputManager = TextOutputManager()
+    private var floatingIndicator: FloatingIndicator?
     private var maxDurationTask: Task<Void, Never>?
     private var permissionPollTask: Task<Void, Never>?
+    private var indicatorHideTask: Task<Void, Never>?
     private var micPermissionGranted = false
 
     private static let defaultModelName = "ggml-large-v3-turbo.bin"
@@ -24,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusBar = StatusBarController(appState: appState)
         statusBar?.onRetryPermission = { [weak self] in self?.retryPermissionCheck() }
+        floatingIndicator = FloatingIndicator()
 
         // Cache mic permission if already granted
         if micStatus == .authorized {
@@ -171,6 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             try audioRecorder.startRecording()
+            cancelIndicatorHide()
+            floatingIndicator?.show(phase: .recording)
             print("[TypeFlow] Recording started")
 
             let maxDuration = ConfigManager.shared.maxRecordingDuration
@@ -182,6 +189,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             appState.showError("Recording failed: \(error.localizedDescription)")
+            floatingIndicator?.show(phase: .error(error.localizedDescription))
+            scheduleIndicatorHide()
             print("[TypeFlow] Recording failed: \(error)")
         }
     }
@@ -190,37 +199,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         maxDurationTask?.cancel()
         maxDurationTask = nil
 
-        // Always stop audio engine first, regardless of duration
+        // Always stop audio engine first
         let samples = audioRecorder.stopRecording()
 
         guard let duration = appState.stopRecording() else {
-            // Too short (<0.5s) or not in recording state — samples discarded
+            // Too short (<0.5s) or not in recording state
+            floatingIndicator?.hide()
             return
         }
 
-        // Empty samples = audio capture failure (e.g. no mic, engine error)
+        // Empty samples = audio capture failure
         if samples.isEmpty {
-            print("[TypeFlow] Recording stopped but got 0 samples — audio capture may have failed")
+            print("[TypeFlow] Recording stopped but got 0 samples")
             appState.showError("No audio captured")
+            floatingIndicator?.show(phase: .error("No audio"))
+            scheduleIndicatorHide()
             return
         }
 
         print("[TypeFlow] Recording stopped: \(String(format: "%.2f", duration))s, \(samples.count) samples")
+        cancelIndicatorHide()
+        floatingIndicator?.show(phase: .processing)
 
         guard let engine = whisperEngine else {
             appState.showError("Whisper engine not initialized")
+            floatingIndicator?.show(phase: .error("Engine error"))
+            scheduleIndicatorHide()
             return
         }
 
         Task {
             do {
-                let text = try await engine.transcribe(samples: samples)
-                print("[TypeFlow] Result: \(text)")
-                // Stage 3: transcription done, LLM polish not yet implemented
+                let rawText = try await engine.transcribe(samples: samples)
+                print("[TypeFlow] STT: \(rawText)")
+
+                let polished = await llmService.polish(text: rawText)
+                if polished != rawText {
+                    print("[TypeFlow] LLM: \(polished)")
+                } else {
+                    print("[TypeFlow] LLM: skipped or unchanged")
+                }
+
+                await textOutputManager.output(text: polished)
+                floatingIndicator?.hide()
                 appState.finishProcessing()
             } catch {
-                print("[TypeFlow] Transcription failed: \(error)")
+                print("[TypeFlow] Processing failed: \(error)")
                 appState.showError("\(error)")
+                floatingIndicator?.show(phase: .error("\(error)"))
+                scheduleIndicatorHide()
             }
         }
     }
@@ -230,7 +257,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         maxDurationTask = nil
         _ = audioRecorder.stopRecording()
         appState.reset()
+        floatingIndicator?.hide()
         print("[TypeFlow] Recording cancelled (combo key detected)")
+    }
+
+    private func scheduleIndicatorHide() {
+        indicatorHideTask?.cancel()
+        indicatorHideTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            floatingIndicator?.hide()
+        }
+    }
+
+    private func cancelIndicatorHide() {
+        indicatorHideTask?.cancel()
+        indicatorHideTask = nil
     }
 }
 
