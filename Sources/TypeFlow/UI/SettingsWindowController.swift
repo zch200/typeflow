@@ -424,12 +424,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
 
     private func updateModelStatus() {
         let path = ConfigManager.shared.modelPath
-        if FileManager.default.fileExists(atPath: path) {
+        let ext = (path as NSString).pathExtension.lowercased()
+
+        if !FileManager.default.fileExists(atPath: path) {
+            modelStatusLabel?.stringValue = "✗ File not found"
+            modelStatusLabel?.textColor = .systemRed
+        } else if ext != "bin" {
+            modelStatusLabel?.stringValue = "⚠ Expected a .bin model file"
+            modelStatusLabel?.textColor = .systemOrange
+        } else {
             modelStatusLabel?.stringValue = "✓ Model found"
             modelStatusLabel?.textColor = .systemGreen
-        } else {
-            modelStatusLabel?.stringValue = "✗ Model not found at this path"
-            modelStatusLabel?.textColor = .systemRed
         }
     }
 
