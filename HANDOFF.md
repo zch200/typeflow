@@ -1,30 +1,23 @@
 # 项目交接状态
-最后更新: 2026-03-25 会话主题: 技术设计 + 开发计划 + 仓库初始化
-
-## 项目概述
-TypeFlow — macOS 语音输入工具，按住快捷键说话 → 松开 → 本地转写 → 云端润色 → 智能填入。仅个人使用。
-
-## 立项背景
-分析了 TypeNo (github.com/marswaveai/TypeNo) 后认为功能不足（无润色、转写质量差），决定自研。
-
-## 关键文档
-- 技术设计：[`docs/technical-design.md`](docs/technical-design.md)
-- 开发计划：[`docs/development-plan.md`](docs/development-plan.md)
-
-## 关键决策
-- 构建方案：**SPM + shell 脚本打包 .app**（无完整 Xcode，TypeNo 已验证可行）
-- 前置依赖：`brew install cmake`（whisper.cpp 编译需要）
-- TypeNo (`/Users/lok666/Desktop/othercode/typeno/`) 作为架构参考
-- 仓库：`https://github.com/zch200/typeflow.git`
+最后更新: 2026-03-25 会话主题: 阶段 1+2 实现
 
 ## 当前进展
 - [已完成] 需求讨论与技术选型
-- [已完成] 技术设计文档
-- [已完成] 开发计划（6 阶段，4 次会话）
-- [已完成] Git 仓库初始化 + 远程关联
-- [待开始] 阶段 1+2：项目骨架 + 状态机 + 快捷键 + 录音
+- [已完成] 技术设计文档 + 开发计划
+- [已完成] Git 仓库初始化
+- [已完成] 阶段 1：项目骨架 + 菜单栏空壳
+- [已完成] 阶段 2：状态机 + 快捷键 + 录音
+- [待开始] 阶段 3：whisper.cpp 集成 + 本地转写
+
+## 阶段 1+2 技术细节
+- Swift 6.0.2，swift-tools-version: 6.0，严格并发模式
+- HotkeyManager 用 CGEvent.tapCreate + MainActor.assumeIsolated 解决 Swift 6 并发
+- AudioRecorder 用 @unchecked Sendable + NSLock 保护 installTap 回调线程安全
+- 权限轮询用 Task + Task.sleep 替代 Timer，避免 @Sendable 捕获问题
+
+## 未解决的问题
+- 需用户手动验证：菜单栏图标、快捷键录音、误触丢弃等交互行为
 
 ## 下次会话建议
-- 读 `docs/development-plan.md` 了解完整计划
-- 执行阶段 1+2，参考 TypeNo 的 SPM 架构模式
-- 交付物：可运行菜单栏 app，按住 Left Option 录音松开停止
+- 执行阶段 3：whisper.cpp submodule + CMake 编译 + 本地转写
+- 前置：确认 `brew install cmake` 已完成
