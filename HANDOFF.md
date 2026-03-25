@@ -1,19 +1,19 @@
 # 项目交接状态
-最后更新: 2026-03-25 会话主题: 阶段 6 完成 + bug 修复
+最后更新: 2026-03-25 会话主题: ASR 引擎抽象层设计
 
 ## 当前进展
-- [已完成] 阶段 1-6：全部开发计划完成
-- [进行中] 人工验收测试
+- [已完成] 阶段 1-6：基础功能全部开发完成
+- [已完成] ASR 引擎技术选型调研（Whisper vs Qwen3-ASR，本地 vs 云端）
+- [已完成] SpeechEngine 抽象层 + 云端百炼引擎的设计文档和实施计划
+- [待开始] SpeechEngine 抽象层 + QwenCloudEngine 编码实施
 
-## 已修复的 bug（本次会话）
-- 代码审查修复：modelPath 旧配置迁移、LLM 设置即时保存、热键重建后暂停保护
-- 用户反馈修复：辅助功能自动弹窗授权、模型文件 .bin 后缀校验、设置窗口 Cmd+V 粘贴
-
-## 已知待观察事项
-- 辅助功能权限：重新编译后 ad-hoc 签名变化会使 TCC 缓存失效，已改用 AXIsProcessTrustedWithOptions(prompt:true) 自动弹窗
-- Per-app override 策略仍为硬编码，无 UI 配置入口
-- 用户正在进行人工验收，可能还有后续 bug
+## 关键设计决策
+- SpeechEngine protocol（Sendable，非 Actor），WhisperEngine + QwenCloudEngine 两种实现
+- 云端使用百炼 qwen3-asr-flash，PCM16 WAV 编码上传，最大录音 240 秒（10 MB base64 限制）
+- cloudSpeechApiKey 独立 Keychain 条目，不与 llmApiKey 共用
+- 引擎切换时若 processingTask 在执行，不 shutdown 旧引擎（任务闭包持有强引用，自然回收）
 
 ## 下次会话建议
-- 检查用户是否有新的 bug 反馈
-- 如需优化：per-app override UI 化、设置窗口视觉打磨
+- 读取实施计划：`.claude/plans/mellow-hatching-balloon.md`
+- 按 Step 1-6 顺序编码，每步可独立编译验证
+- 相关设计文档：`docs/design/asr-engine-selection.md`

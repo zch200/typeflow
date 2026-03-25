@@ -71,6 +71,6 @@ open ./dist/TypeFlow.app
 
 ## Documentation
 
-- [docs/technical-design.md](docs/technical-design.md) — 完整技术设计文档（架构、模块、数据流、状态机）
-- [docs/development-plan.md](docs/development-plan.md) — 6 阶段开发计划与验收标准
+- [docs/design/technical-design.md](docs/design/technical-design.md) — 完整技术设计文档（架构、模块、数据流、状态机）
+- [docs/design/asr-engine-selection.md](docs/design/asr-engine-selection.md) — ASR 引擎技术选型与演进规划
 - [HANDOFF.md](HANDOFF.md) — 跨会话进度交接
