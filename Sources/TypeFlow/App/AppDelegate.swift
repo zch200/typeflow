@@ -8,9 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private var hotkeyManager: HotkeyManager?
     private let audioRecorder = AudioRecorder()
+    private var whisperEngine: WhisperEngine?
     private var maxDurationTask: Task<Void, Never>?
     private var permissionPollTask: Task<Void, Never>?
     private var micPermissionGranted = false
+
+    private static let defaultModelName = "ggml-large-v3-turbo.bin"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -27,6 +30,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             micPermissionGranted = true
         } else if micStatus == .denied || micStatus == .restricted {
             statusBar?.showMicPermissionHint(true)
+        }
+
+        // Initialize whisper engine
+        let modelDir = ConfigManager.shared.modelDirectory
+        let modelPath = (modelDir as NSString).appendingPathComponent(Self.defaultModelName)
+        whisperEngine = WhisperEngine(modelPath: modelPath)
+        if !FileManager.default.fileExists(atPath: modelPath) {
+            print("[TypeFlow] Warning: model not found at \(modelPath)")
+            print("[TypeFlow] Download a whisper model and place it there to enable transcription")
         }
 
         if axTrusted {
@@ -195,8 +207,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         print("[TypeFlow] Recording stopped: \(String(format: "%.2f", duration))s, \(samples.count) samples")
 
-        // Stage 2: print info and go back to idle (transcription not yet implemented)
-        appState.finishProcessing()
+        guard let engine = whisperEngine else {
+            appState.showError("Whisper engine not initialized")
+            return
+        }
+
+        Task {
+            do {
+                let text = try await engine.transcribe(samples: samples)
+                print("[TypeFlow] Result: \(text)")
+                // Stage 3: transcription done, LLM polish not yet implemented
+                appState.finishProcessing()
+            } catch {
+                print("[TypeFlow] Transcription failed: \(error)")
+                appState.showError("\(error)")
+            }
+        }
     }
 
     private func handleHotkeyCancel() {

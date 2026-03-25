@@ -11,6 +11,9 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 
 echo "Building ${APP_NAME}..."
 
+# Build whisper.cpp static libraries if needed (handles commit hash + library checks)
+"$ROOT_DIR/scripts/build_whisper.sh"
+
 mkdir -p "$ROOT_DIR/dist"
 
 swift build -c release --package-path "$ROOT_DIR"

@@ -1,24 +1,25 @@
 # 项目交接状态
-最后更新: 2026-03-25 会话主题: 阶段 1+2 实现 + 代码审核修复
+最后更新: 2026-03-25 会话主题: 阶段 3 — whisper.cpp 集成 + 本地转写
 
 ## 当前进展
-- [已完成] 需求讨论与技术选型
-- [已完成] 技术设计文档 + 开发计划
-- [已完成] Git 仓库初始化
 - [已完成] 阶段 1：项目骨架 + 菜单栏空壳
-- [已完成] 阶段 2：状态机 + 快捷键 + 录音（已通过人工验收）
-- [待开始] 阶段 3：whisper.cpp 集成 + 本地转写
+- [已完成] 阶段 2：状态机 + 快捷键 + 录音
+- [已完成] 阶段 3：whisper.cpp 集成 + 本地转写（已通过代码审核）
+- [待开始] 阶段 4：浮动指示器 + LLM 润色
 
-## 阶段 1+2 技术要点
-- Swift 6.0.2，swift-tools-version: 6.0，严格并发模式
-- HotkeyManager: CGEvent.tapCreate + MainActor.assumeIsolated
-- AudioRecorder: @unchecked Sendable + NSLock 保护 installTap 回调
-- 权限轮询: Task + Task.sleep（setupHotkey 返回 Bool，失败继续轮询）
-- 保护: 单实例检测、麦克风权限检查、empty samples 检测、误触停引擎
+## 阶段 3 技术要点
+- whisper.cpp git submodule + CMake 静态库（Metal/BLAS 加速）
+- CWhisper SPM target 暴露 C API 给 Swift
+- WhisperEngine: actor 线程安全，懒加载，强制 zh，空闲 5 分钟释放
+- 构建缓存：commit hash + 库文件校验，submodule 更新自动重建
 
-## 已知 TODO
-- HotkeyManager `flags.contains(.maskAlternate)` 写死 Left Option，阶段 6 改为按配置映射
+## 模型下载备忘
+```bash
+mkdir -p ~/Library/Application\ Support/TypeFlow/Models
+curl -L -o ~/Library/Application\ Support/TypeFlow/Models/ggml-large-v3-turbo.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+```
+下载后运行 `open dist/TypeFlow.app`，按住 Left Option 说中文，松开观察控制台转写输出。
 
 ## 下次会话建议
-- 执行阶段 3：whisper.cpp submodule + CMake 编译 + 本地转写
-- 前置：确认 `brew install cmake` 已完成
+- 执行阶段 4+5：浮动指示器 + LLM 润色 + 文本输出
