@@ -18,8 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var processingTask: Task<Void, Never>?
     private var isTerminating = false
     private var micPermissionGranted = false
-
-    private static let defaultModelName = "ggml-large-v3-turbo.bin"
+    private lazy var settingsController = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -30,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusBar = StatusBarController(appState: appState)
         statusBar?.onRetryPermission = { [weak self] in self?.retryPermissionCheck() }
+        statusBar?.onOpenSettings = { [weak self] in self?.openSettings() }
         floatingIndicator = FloatingIndicator()
 
         // Cache mic permission if already granted
@@ -40,13 +40,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Initialize whisper engine
-        let modelDir = ConfigManager.shared.modelDirectory
-        let modelPath = (modelDir as NSString).appendingPathComponent(Self.defaultModelName)
+        let modelPath = ConfigManager.shared.modelPath
         whisperEngine = WhisperEngine(modelPath: modelPath)
         if !FileManager.default.fileExists(atPath: modelPath) {
             print("[TypeFlow] Warning: model not found at \(modelPath)")
             print("[TypeFlow] Download a whisper model and place it there to enable transcription")
         }
+
+        // Wire settings callbacks
+        setupSettingsCallbacks()
 
         if axTrusted {
             if !setupHotkey() {
@@ -204,6 +206,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         @unknown default:
             return true
+        }
+    }
+
+    // MARK: - Settings
+
+    private func openSettings() {
+        settingsController.showWindow()
+    }
+
+    private func setupSettingsCallbacks() {
+        settingsController.onSettingsOpened = { [weak self] in
+            self?.hotkeyManager?.pause()
+        }
+        settingsController.onSettingsClosed = { [weak self] in
+            self?.hotkeyManager?.resume()
+        }
+        settingsController.onHotkeyChanged = { [weak self] _ in
+            guard let self else { return }
+            self.hotkeyManager?.stop()
+            self.hotkeyManager = nil
+            if AXIsProcessTrusted() {
+                self.setupHotkey()
+                // Settings window is still open → keep the new manager paused
+                self.hotkeyManager?.pause()
+            }
+        }
+        settingsController.onModelPathChanged = { [weak self] path in
+            guard let self else { return }
+            let oldEngine = self.whisperEngine
+            self.whisperEngine = WhisperEngine(modelPath: path)
+            if !FileManager.default.fileExists(atPath: path) {
+                print("[TypeFlow] Warning: model not found at \(path)")
+            }
+            if let oldEngine {
+                Task { await oldEngine.shutdown() }
+            }
         }
     }
 

@@ -23,11 +23,18 @@ final class ConfigManager {
 
     // MARK: - Whisper Model
 
-    var modelDirectory: String {
+    /// Full path to the whisper model file.
+    /// Migration: reads legacy "modelDirectory" key so existing users keep their custom path.
+    var modelPath: String {
         get {
-            defaults.string(forKey: "modelDirectory") ?? defaultModelDirectory
+            if let path = defaults.string(forKey: "modelPath"), !path.isEmpty {
+                return path
+            }
+            // Legacy migration: honour old "modelDirectory" key if set
+            let dir = defaults.string(forKey: "modelDirectory") ?? defaultModelDirectory
+            return (dir as NSString).appendingPathComponent("ggml-large-v3-turbo.bin")
         }
-        set { defaults.set(newValue, forKey: "modelDirectory") }
+        set { defaults.set(newValue, forKey: "modelPath") }
     }
 
     private var defaultModelDirectory: String {
@@ -63,7 +70,7 @@ final class ConfigManager {
         }
     }
 
-    private static let defaultSystemPrompt = """
+    static let defaultSystemPrompt = """
         你是一个语音转文字的润色助手。请对以下语音识别文本进行润色：
         1. 修正明显的语音识别错误和错别字
         2. 去除口语化的语气词（如"嗯"、"那个"、"就是说"等）
@@ -102,6 +109,42 @@ final class ConfigManager {
         "com.tencent.xinWeChat": .blindPasteOnly,
         "com.tencent.WeWorkMac": .blindPasteThenPopup,
     ]
+
+    // MARK: - Indicator Position
+
+    var indicatorPosition: (x: Double, y: Double)? {
+        get {
+            guard defaults.object(forKey: "indicatorX") != nil else { return nil }
+            return (defaults.double(forKey: "indicatorX"), defaults.double(forKey: "indicatorY"))
+        }
+        set {
+            if let p = newValue {
+                defaults.set(p.x, forKey: "indicatorX")
+                defaults.set(p.y, forKey: "indicatorY")
+            } else {
+                defaults.removeObject(forKey: "indicatorX")
+                defaults.removeObject(forKey: "indicatorY")
+            }
+        }
+    }
+
+    // MARK: - Display Helpers
+
+    static func hotkeyDisplayName(_ keyCode: UInt16) -> String {
+        switch keyCode {
+        case 58: "⌥ Left Option"
+        case 61: "⌥ Right Option"
+        case 59: "⌃ Left Control"
+        case 62: "⌃ Right Control"
+        case 56: "⇧ Left Shift"
+        case 60: "⇧ Right Shift"
+        case 55: "⌘ Left Command"
+        case 54: "⌘ Right Command"
+        case 57: "⇪ Caps Lock"
+        case 63: "fn Function"
+        default: "Key \(keyCode)"
+        }
+    }
 
     private init() {}
 }

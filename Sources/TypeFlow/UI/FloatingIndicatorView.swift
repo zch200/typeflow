@@ -84,6 +84,7 @@ private struct ErrorIndicator: View {
 @MainActor
 final class FloatingIndicator {
     private var panel: NSPanel?
+    private var moveObserver: (any NSObjectProtocol)?
 
     func show(phase: AppPhase) {
         ensurePanel()
@@ -97,7 +98,13 @@ final class FloatingIndicator {
     }
 
     func hide() {
+        savePosition()
         panel?.orderOut(nil)
+    }
+
+    private func savePosition() {
+        guard let origin = panel?.frame.origin else { return }
+        ConfigManager.shared.indicatorPosition = (Double(origin.x), Double(origin.y))
     }
 
     private func ensurePanel() {
@@ -116,12 +123,25 @@ final class FloatingIndicator {
         p.collectionBehavior = [.canJoinAllSpaces, .stationary]
         p.isMovableByWindowBackground = true
 
-        // Position: bottom-center of main screen
-        if let screen = NSScreen.main {
+        // Position: saved or default (bottom-center)
+        if let saved = ConfigManager.shared.indicatorPosition {
+            p.setFrameOrigin(NSPoint(x: saved.x, y: saved.y))
+        } else if let screen = NSScreen.main {
             let vis = screen.visibleFrame
             p.setFrameOrigin(NSPoint(x: vis.midX - 30, y: vis.minY + 20))
         }
 
         panel = p
+
+        // Save position after drag
+        moveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: p,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.savePosition()
+            }
+        }
     }
 }

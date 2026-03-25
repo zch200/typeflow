@@ -12,6 +12,8 @@ final class StatusBarController: NSObject {
 
     /// Called when user clicks "Retry Permission Check"
     var onRetryPermission: (() -> Void)?
+    /// Called when user clicks "Settings..."
+    var onOpenSettings: (() -> Void)?
 
     init(appState: AppState) {
         super.init()
@@ -146,8 +148,9 @@ final class StatusBarController: NSObject {
     }
 
     func updateHotkeyStatus(enabled: Bool) {
+        let name = ConfigManager.hotkeyDisplayName(ConfigManager.shared.hotkeyKeyCode)
         if enabled {
-            hotkeyMenuItem?.title = "Hotkey: Left Option (Active)"
+            hotkeyMenuItem?.title = "Hotkey: \(name) (Active)"
         } else {
             hotkeyMenuItem?.title = "Hotkey: Disabled (Permission Required)"
         }
@@ -181,7 +184,7 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func openSettings() {
-        print("[TypeFlow] Settings not yet implemented")
+        onOpenSettings?()
     }
 
     @objc private func quit() {

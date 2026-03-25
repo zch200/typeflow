@@ -15,6 +15,7 @@ final class HotkeyManager {
     private var runLoopSource: CFRunLoopSource?
     private var isPressed = false
     private var comboDetected = false
+    private var isPaused = false
     private let targetKeyCode: UInt16
 
     init(keyCode: UInt16 = 58) { // 58 = Left Option
@@ -89,20 +90,42 @@ final class HotkeyManager {
         }
     }
 
+    func pause() {
+        isPaused = true
+        if isPressed {
+            isPressed = false
+            comboDetected = false
+            onCancel?()
+        }
+    }
+
+    func resume() {
+        isPaused = false
+    }
+
+    private var targetModifierFlag: CGEventFlags {
+        switch targetKeyCode {
+        case 58, 61: .maskAlternate
+        case 59, 62: .maskControl
+        case 56, 60: .maskShift
+        case 55, 54: .maskCommand
+        case 57: .maskAlphaShift
+        case 63: .maskSecondaryFn
+        default: .maskAlternate
+        }
+    }
+
     private func handleFlagsChanged(keyCode: UInt16, flags: CGEventFlags) {
+        guard !isPaused else { return }
         guard keyCode == targetKeyCode else { return }
 
-        // TODO(stage 6): Map targetKeyCode to the correct modifier flag dynamically.
-        // Currently hardcoded to .maskAlternate for Left Option (keycode 58).
-        let optionPressed = flags.contains(.maskAlternate)
+        let modifierPressed = flags.contains(targetModifierFlag)
 
-        if optionPressed && !isPressed {
-            // Left Option pressed
+        if modifierPressed && !isPressed {
             isPressed = true
             comboDetected = false
             onPress?()
-        } else if !optionPressed && isPressed {
-            // Left Option released
+        } else if !modifierPressed && isPressed {
             isPressed = false
             if comboDetected {
                 comboDetected = false
