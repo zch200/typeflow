@@ -24,7 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         installEditMenu()
 
-        let axTrusted = AXIsProcessTrusted()
+        // Prompt system authorization dialog if not yet trusted.
+        // The key is kAXTrustedCheckOptionPrompt ("AXTrustedCheckOptionPrompt").
+        let axTrusted = AXIsProcessTrustedWithOptions(
+            ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        )
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         print("[TypeFlow] Launch: AXIsProcessTrusted=\(axTrusted), microphoneStatus=\(micStatus.label)")
 
