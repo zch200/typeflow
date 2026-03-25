@@ -62,12 +62,12 @@ final class HotkeyManager {
         comboDetected = false
     }
 
-    /// Called from the C callback on the main run loop thread.
-    /// Extracts value types from CGEvent before entering MainActor isolation.
+    /// Called from the C callback. CGEvent tap callbacks are not guaranteed
+    /// to arrive on the main thread, so forward state handling onto MainActor.
     nonisolated fileprivate func handleEventFromCallback(type: CGEventType, event: CGEvent) {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             self.handleEvent(type: type, keyCode: keyCode, flags: flags)
         }
     }
@@ -119,7 +119,7 @@ final class HotkeyManager {
     }
 }
 
-// C function pointer for CGEvent tap — runs on the main run loop thread.
+// C function pointer for CGEvent tap — forwards handling onto MainActor.
 private func hotkeyEventCallback(
     proxy: CGEventTapProxy,
     type: CGEventType,

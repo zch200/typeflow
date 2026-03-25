@@ -3,7 +3,7 @@ import ApplicationServices
 
 @MainActor
 final class TextOutputManager {
-    private var resultPopup: ResultPopup?
+    private let resultPopup = ResultPopup()
 
     // MARK: - Focus Classification
 
@@ -352,11 +352,15 @@ final class TextOutputManager {
     // MARK: - Popup
 
     private func showPopup(_ text: String, hint: String? = nil) {
-        resultPopup?.close()
-        let popup = ResultPopup(text: text, hint: hint)
-        popup.show()
-        resultPopup = popup
-        print("[TypeFlow] Output: → popup displayed (hint=\(hint ?? "none"))")
+        print("[TypeFlow] Output: → popup enqueued (hint=\(hint ?? "none"))")
+        let popup = resultPopup
+
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                popup.show(text: text, hint: hint)
+                print("[TypeFlow] Output: popup show() returned")
+            }
+        }
     }
 
     // MARK: - AX Attribute Helpers

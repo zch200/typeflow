@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var maxDurationTask: Task<Void, Never>?
     private var permissionPollTask: Task<Void, Never>?
     private var indicatorHideTask: Task<Void, Never>?
+    private var processingTask: Task<Void, Never>?
+    private var isTerminating = false
     private var micPermissionGranted = false
 
     private static let defaultModelName = "ggml-large-v3-turbo.bin"
@@ -56,6 +58,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar?.showPermissionHint(true)
             startPermissionPolling()
         }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isTerminating {
+            return .terminateNow
+        }
+
+        isTerminating = true
+        print("[TypeFlow] Shutdown: begin")
+
+        hotkeyManager?.stop()
+        permissionPollTask?.cancel()
+        permissionPollTask = nil
+        maxDurationTask?.cancel()
+        maxDurationTask = nil
+        indicatorHideTask?.cancel()
+        indicatorHideTask = nil
+        processingTask?.cancel()
+        _ = audioRecorder.stopRecording()
+        floatingIndicator?.hide()
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                sender.reply(toApplicationShouldTerminate: true)
+                return
+            }
+
+            if let whisperEngine = self.whisperEngine {
+                print("[TypeFlow] Shutdown: freeing whisper context")
+                await whisperEngine.shutdown()
+            }
+
+            print("[TypeFlow] Shutdown: complete")
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+
+        return .terminateLater
     }
 
     // MARK: - Hotkey Setup
@@ -228,7 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        Task {
+        processingTask = Task {
             do {
                 let rawText = try await engine.transcribe(samples: samples)
                 print("[TypeFlow] STT: \(rawText)")
@@ -240,15 +279,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     print("[TypeFlow] LLM: skipped or unchanged")
                 }
 
+                print("[TypeFlow] output begin — text length=\(polished.count)")
                 await textOutputManager.output(text: polished)
+                print("[TypeFlow] output end")
+
                 floatingIndicator?.hide()
+                print("[TypeFlow] indicator hidden (phase: processing → idle)")
+
                 appState.finishProcessing()
+                print("[TypeFlow] phase → idle")
             } catch {
                 print("[TypeFlow] Processing failed: \(error)")
                 appState.showError("\(error)")
                 floatingIndicator?.show(phase: .error("\(error)"))
                 scheduleIndicatorHide()
             }
+
+            processingTask = nil
         }
     }
 

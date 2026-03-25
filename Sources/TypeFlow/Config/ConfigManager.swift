@@ -96,9 +96,10 @@ final class ConfigManager {
         "com.apple.Preview": .popupOnly,
         "com.apple.SystemPreferences": .popupOnly,
         "com.apple.systempreferences": .popupOnly,
-        // Electron/AX-opaque apps → paste + popup safety net (same as default, explicit)
-        "com.openai.codex": .blindPasteThenPopup,
-        "com.tencent.xinWeChat": .blindPasteThenPopup,
+        // Electron/AX-opaque apps where blind paste works reliably in practice.
+        // Avoid popup here because AppKit window presentation can stall the main actor.
+        "com.openai.codex": .blindPasteOnly,
+        "com.tencent.xinWeChat": .blindPasteOnly,
         "com.tencent.WeWorkMac": .blindPasteThenPopup,
     ]
 

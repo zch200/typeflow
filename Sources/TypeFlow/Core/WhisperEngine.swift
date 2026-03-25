@@ -104,4 +104,10 @@ actor WhisperEngine {
             unloadModel()
         }
     }
+
+    func shutdown() {
+        idleTask?.cancel()
+        idleTask = nil
+        unloadModel()
+    }
 }
