@@ -37,11 +37,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar?.onOpenSettings = { [weak self] in self?.openSettings() }
         floatingIndicator = FloatingIndicator()
 
-        // Cache mic permission if already granted
-        if micStatus == .authorized {
+        // Request mic permission early — macOS may kill the process on first
+        // grant, so trigger this during launch rather than mid-recording.
+        switch micStatus {
+        case .authorized:
             micPermissionGranted = true
-        } else if micStatus == .denied || micStatus == .restricted {
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                Task { @MainActor in
+                    self?.micPermissionGranted = granted
+                    if granted {
+                        print("[TypeFlow] Microphone permission granted (startup)")
+                        self?.statusBar?.showMicPermissionHint(false)
+                    } else {
+                        print("[TypeFlow] Microphone permission denied (startup)")
+                        self?.statusBar?.showMicPermissionHint(true)
+                    }
+                }
+            }
+        case .denied, .restricted:
             statusBar?.showMicPermissionHint(true)
+        @unknown default:
+            break
         }
 
         // Initialize speech engine
@@ -59,10 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if axTrusted {
             if !setupHotkey() {
-                // AX says trusted but tap failed — binary signature may have
-                // changed after rebuild. Show hint so user can re-authorize.
-                print("[TypeFlow] AXIsProcessTrusted=true but event tap failed — may need re-authorization")
-                statusBar?.showPermissionHint(true)
+                // AX says trusted but tap failed — binary signature changed
+                // after rebuild. Reset stale TCC entry and re-prompt.
+                print("[TypeFlow] AXIsProcessTrusted=true but event tap failed — signature mismatch")
+                resetStaleAccessibilityPermission()
+                statusBar?.showPermissionHint(true, stale: true)
                 startPermissionPolling()
             }
         } else {
@@ -389,6 +407,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelIndicatorHide() {
         indicatorHideTask?.cancel()
         indicatorHideTask = nil
+    }
+
+    // MARK: - Stale Permission Recovery
+
+    /// When AXIsProcessTrusted() returns true but CGEvent.tapCreate fails, the code
+    /// signature has changed since the last authorization (common after rebuild).
+    /// Clear the stale TCC entry so a fresh authorization prompt appears.
+    private func resetStaleAccessibilityPermission() {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.typeflow.app"
+        print("[TypeFlow] Resetting stale TCC entry for \(bundleId)")
+
+        let tccutil = Process()
+        tccutil.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        tccutil.arguments = ["reset", "Accessibility", bundleId]
+        tccutil.standardOutput = FileHandle.nullDevice
+        tccutil.standardError = FileHandle.nullDevice
+
+        do {
+            try tccutil.run()
+            tccutil.waitUntilExit()
+            print("[TypeFlow] tccutil exit code: \(tccutil.terminationStatus)")
+        } catch {
+            print("[TypeFlow] tccutil failed: \(error)")
+            return
+        }
+
+        // Re-prompt: if reset worked, AXIsProcessTrusted() is now false
+        // and this will show the system authorization dialog
+        let prompted = AXIsProcessTrustedWithOptions(
+            ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        )
+        print("[TypeFlow] After TCC reset: AXIsProcessTrusted=\(prompted)")
     }
 
     // MARK: - Speech Engine Factory

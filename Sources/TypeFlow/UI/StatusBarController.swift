@@ -156,9 +156,14 @@ final class StatusBarController: NSObject {
         }
     }
 
-    func showPermissionHint(_ show: Bool) {
+    func showPermissionHint(_ show: Bool, stale: Bool = false) {
         permissionMenuItem?.isHidden = !show
         retryMenuItem?.isHidden = !show
+        if show && stale {
+            permissionMenuItem?.title = "Re-authorize Accessibility (remove & re-add)..."
+        } else if !show {
+            permissionMenuItem?.title = "Grant Accessibility Permission..."
+        }
     }
 
     func showMicPermissionHint(_ show: Bool) {

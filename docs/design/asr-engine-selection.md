@@ -94,7 +94,7 @@
      │               │
   Whisper          QwenCloud
   Engine           Engine
- (actor,          (@MainActor,
+ (actor,          (actor,
   whisper.cpp)     百炼 API)
 ```
 
@@ -113,7 +113,7 @@ protocol SpeechEngine: Sendable {
 ```
 
 **设计决策**：
-- 协议标记 `Sendable`（非 `Actor`）：`WhisperEngine` 是 actor，`QwenCloudEngine` 是 `@MainActor` class，两者都自动满足 `Sendable`。用 Actor 协议会强制所有实现必须是独立 actor，不够灵活。
+- 协议标记 `Sendable`（非 `Actor`）：`WhisperEngine` 和 `QwenCloudEngine` 都是独立 actor，自动满足 `Sendable`。用 Actor 协议会强制所有实现必须是独立 actor，不够灵活（未来可能有非 actor 实现）。
 - 不含 `engineType` 属性：引擎类型由 `ConfigManager.shared.speechEngineType` 管理，引擎本身不需要知道自己的"类型标签"。
 - 各引擎保留各自的 Error 类型（`WhisperError` 等），protocol `throws` 不限定具体错误类型。
 
@@ -202,7 +202,7 @@ Speech 标签页增加引擎类型选择（NSPopUpButton），根据选择动态
 - 相比 Float32 体积减半，可容纳约 4 分钟录音
 - Float32→Int16 转换在引擎内部完成（`sample × 32767` 截断），不影响调用方
 
-**云端模式最大录音时长：240 秒（4 分钟）**，相比本地模式的 300 秒（5 分钟）更短。原因即 base64 编码后的 10 MB 请求体限制。此限制在 `AppDelegate` 中根据当前引擎类型动态选取。
+**云端模式最大录音时长：180 秒（3 分钟）**，相比本地模式的 300 秒（5 分钟）更短。理论上 PCM16 base64 可容纳约 245 秒，但考虑到实际打包后的音频文件大小可能因对齐、填充等因素偏大，设为 180 秒留足安全余量（180s ≈ 7.7 MB base64，远离 10 MB 限制）。此限制在 `ConfigManager.maxRecordingDuration` 中根据当前引擎类型动态选取。
 
 ### 6.3 WAV 编码规格
 

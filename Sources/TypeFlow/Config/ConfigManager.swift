@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 @MainActor
@@ -205,18 +206,32 @@ enum UnavailableFocusStrategy: Int, CustomStringConvertible {
 // MARK: - Keychain Helper
 
 private enum KeychainHelper {
+    /// LAContext with interactionNotAllowed=true suppresses the Keychain
+    /// password dialog when an item belongs to a previous code signature.
+    private static func noPromptContext() -> LAContext {
+        let ctx = LAContext()
+        ctx.interactionNotAllowed = true
+        return ctx
+    }
+
     static func save(service: String, account: String, data: String) {
         guard let bytes = data.data(using: .utf8) else { return }
-        let query: [String: Any] = [
+        // Delete existing item first. Use noPromptContext to avoid
+        // prompting for stale items from a previous code signature.
+        let deleteQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecUseAuthenticationContext as String: noPromptContext(),
         ]
-        // Remove existing item first
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(deleteQuery as CFDictionary)
 
-        var add = query
-        add[kSecValueData as String] = bytes
+        let add: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: bytes,
+        ]
         let status = SecItemAdd(add as CFDictionary, nil)
         if status != errSecSuccess {
             print("[TypeFlow] Keychain save failed: \(status)")
@@ -230,10 +245,18 @@ private enum KeychainHelper {
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationContext as String: noPromptContext(),
         ]
         var ref: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &ref) == errSecSuccess,
-              let data = ref as? Data else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &ref)
+        if status == errSecInteractionNotAllowed {
+            // Item exists but belongs to a previous code signature — ignore it.
+            // User will re-enter the key in Settings, which creates a new item
+            // with the current signature.
+            print("[TypeFlow] Keychain: stale item for \(account) (signature mismatch) — skipped")
+            return nil
+        }
+        guard status == errSecSuccess, let data = ref as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
@@ -242,6 +265,7 @@ private enum KeychainHelper {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecUseAuthenticationContext as String: noPromptContext(),
         ]
         SecItemDelete(query as CFDictionary)
     }

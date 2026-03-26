@@ -190,26 +190,47 @@ struct LLMConfig {
 
 **实现方案**: macOS Accessibility API（`AXUIElement`）。
 
-**判断逻辑**:
-1. 获取当前焦点应用 → 获取焦点元素（`AXFocusedUIElement`）
-2. 检查焦点元素是否为文本输入（`AXRole` 为 `AXTextField` / `AXTextArea` 等）
-3. 分三种情况处理:
+**焦点分类**:
 
-| 情况 | 判断条件 | 行为 |
-|------|----------|------|
-| 替换选中 | 焦点在输入框 + `AXSelectedText` 非空 | 优先 AX 直写 `AXSelectedText`，失败则剪贴板 + `Cmd+V` |
-| 直接插入 | 焦点在输入框 + 无选中文本 | 优先通过 `AXSelectedTextRange` 定位光标，写入 `AXSelectedText`（空选区写入即插入）；失败则剪贴板 + `Cmd+V` |
-| 弹窗展示 | 焦点不在输入框 | 弹出浮动窗口，展示结果 + 复制按钮 |
+通过 AX API 获取焦点应用和焦点元素，分类为三种上下文：
 
-- **写入策略**: 优先通过 `AXUIElementSetAttributeValue` 直接写入（无需触碰剪贴板）；若 AX 写入失败（部分 app 不支持），回退到剪贴板 + `Cmd+V`
-- **剪贴板保护**: 使用剪贴板兜底时，操作前备份、操作后恢复
-- **兜底**: 若替换/插入均失败，回退到弹窗展示
-- 需要 **辅助功能权限**
+| 上下文 | 条件 | 后续处理 |
+|--------|------|----------|
+| `editableText` | 焦点元素为已知文本角色或标记 editable | 多级写入策略 |
+| `nonEditable` | 焦点元素存在但不可编辑 | 弹窗展示 |
+| `unavailable` | 无法获取焦点应用或焦点元素（Electron 等 AX 不透明应用） | 按 `UnavailableFocusStrategy` 处理 |
+
+焦点应用获取失败时，回退到 `NSWorkspace.frontmostApplication` → `AXUIElementCreateApplication`。
+
+**写入策略（editableText，逐级降级）**:
+
+| 级别 | 方法 | 说明 |
+|------|------|------|
+| L1 | `AXSelectedText` 直写 | 零剪贴板干扰，替换选中或插入光标位置 |
+| L2 | `AXValue` + `AXSelectedTextRange` 拼接 | 读取完整文本值，在选区位置替换后整体写回 |
+| L3 | 剪贴板 + `Cmd+V`（带验证） | 操作前备份剪贴板，Cmd+V 后检查 AXValue 是否变化来验证成功 |
+| 兜底 | 弹窗展示 | L1-L3 均失败时回退 |
+
+**AX 不可用时的策略（`UnavailableFocusStrategy`）**:
+
+当 AX 无法获取焦点元素时（如 Electron 应用、Codex、微信等），根据配置策略处理：
+
+| 策略 | 行为 |
+|------|------|
+| `blindPasteOnly` | 直接剪贴板 + Cmd+V，不弹窗 |
+| `blindPasteThenPopup` | 先盲粘贴，再弹窗展示（双保险） |
+| `popupOnly` | 仅弹窗展示 |
+
+- 全局默认策略可在 Settings General 标签页配置
+- 特定应用有硬编码覆盖（如 Codex → blindPasteOnly，Finder → popupOnly）
+- 策略通过 `ConfigManager.strategyForApp(bundleId)` 解析，per-app 覆盖优先于全局默认
+
+**剪贴板保护**: 使用剪贴板时操作前备份内容，500ms 后若剪贴板未被其他程序修改则恢复原内容。
 
 **关键接口**:
 ```swift
 class TextOutputManager {
-    func output(text: String)  // 自动判断：替换 / 插入 / 弹窗
+    func output(text: String) async  // 自动分类焦点 → 多级写入 / 策略处理 / 弹窗
 }
 ```
 
@@ -266,6 +287,8 @@ class TextOutputManager {
 | LLM Model | qwen-turbo | UserDefaults |
 | LLM API Key | (无) | Keychain |
 | 润色 System Prompt | 内置默认 | UserDefaults |
+| AX 不可用策略 | blindPasteThenPopup | UserDefaults |
+| 指示器位置 | 屏幕右下角 | UserDefaults（拖拽后记忆） |
 
 ## 4. 权限需求
 
@@ -298,7 +321,7 @@ TypeFlow/
 │   │   ├── StatusBarController.swift
 │   │   ├── FloatingIndicatorView.swift # 浮动状态指示器
 │   │   ├── ResultPopupView.swift      # 结果弹窗
-│   │   └── SettingsView.swift         # 设置界面
+│   │   └── SettingsWindowController.swift  # 设置窗口（General/Speech/LLM 标签页）
 │   ├── Config/
 │   │   └── ConfigManager.swift
 │   └── CWhisper/                      # whisper.cpp C module map
