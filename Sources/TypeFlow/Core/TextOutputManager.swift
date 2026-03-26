@@ -161,10 +161,22 @@ final class TextOutputManager {
     // MARK: - Level 1: AXSelectedText
 
     private func writeViaSelectedText(_ element: AXUIElement, text: String) -> Bool {
+        // Snapshot AXValue before write to verify afterwards.
+        // Terminal emulators (iTerm2, Terminal.app) return AXError.success on
+        // AXSelectedText write but don't actually modify the content.
+        let valueBefore = axString(element, kAXValueAttribute)
+
         let err = AXUIElementSetAttributeValue(
             element, kAXSelectedTextAttribute as CFString, text as CFTypeRef
         )
         if err == .success {
+            if let valueBefore {
+                let valueAfter = axString(element, kAXValueAttribute)
+                if valueAfter == valueBefore {
+                    print("[TypeFlow] Output: [L1-SelectedText] AXError=success but AXValue unchanged — false positive")
+                    return false
+                }
+            }
             print("[TypeFlow] Output: [L1-SelectedText] succeeded")
             return true
         }
