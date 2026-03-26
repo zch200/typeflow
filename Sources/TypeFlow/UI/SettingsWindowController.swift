@@ -9,8 +9,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     private var strategyPopup: NSPopUpButton?
 
     // Speech tab
+    private var engineTypePopup: NSPopUpButton?
+    private var localPanel: NSView?
+    private var cloudPanel: NSView?
     private var modelPathField: NSTextField?
     private var modelStatusLabel: NSTextField?
+    private var cloudApiKeyField: NSSecureTextField?
+    private var cloudModelField: NSTextField?
 
     // LLM tab
     private var endpointField: NSTextField?
@@ -24,7 +29,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
 
     // Callbacks
     var onHotkeyChanged: ((UInt16) -> Void)?
-    var onModelPathChanged: ((String) -> Void)?
+    var onSpeechEngineChanged: (() -> Void)?
     var onSettingsOpened: (() -> Void)?
     var onSettingsClosed: (() -> Void)?
 
@@ -67,6 +72,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         MainActor.assumeIsolated {
             self.stopHotkeyRecording(cancelled: true)
             self.saveAllLLMFields()
+            self.saveAllCloudSpeechFields()
             self.onSettingsClosed?()
         }
     }
@@ -74,8 +80,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     // MARK: - NSTextFieldDelegate (LLM fields save on focus-out)
 
     nonisolated func controlTextDidEndEditing(_ obj: Notification) {
+        // Extract object reference before crossing actor boundary (Notification is not Sendable)
+        let field = obj.object as? NSTextField
         Task { @MainActor [weak self] in
-            self?.saveAllLLMFields()
+            guard let self else { return }
+            if let field {
+                self.saveCloudSpeechField(field)
+            }
+            self.saveAllLLMFields()
         }
     }
 
@@ -118,7 +130,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         if let prompt = systemPromptTextView?.string, !prompt.isEmpty {
             ConfigManager.shared.llmSystemPrompt = prompt
         }
-        print("[TypeFlow] Settings: all fields saved (window close)")
+        print("[TypeFlow] Settings: LLM fields saved")
+    }
+
+    /// Safety net: save cloud speech fields (called on window close)
+    private func saveAllCloudSpeechFields() {
+        if let f = cloudApiKeyField { saveCloudSpeechField(f) }
+        if let f = cloudModelField { saveCloudSpeechField(f) }
+        print("[TypeFlow] Settings: cloud speech fields saved")
     }
 
     // MARK: - General Tab
@@ -182,36 +201,97 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
 
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 370))
 
-        view.addSubview(makeLabel("Model File:", x: 20, y: 310))
+        // Engine type selector
+        view.addSubview(makeLabel("Engine:", x: 20, y: 330))
 
-        let pathField = NSTextField(frame: NSRect(x: 150, y: 308, width: 250, height: 24))
+        let popup = NSPopUpButton(frame: NSRect(x: 150, y: 326, width: 200, height: 28))
+        popup.addItems(withTitles: ["Local Whisper", "Cloud Qwen ASR"])
+        popup.selectItem(at: ConfigManager.shared.speechEngineType.rawValue)
+        popup.target = self
+        popup.action = #selector(engineTypeChanged(_:))
+        view.addSubview(popup)
+        engineTypePopup = popup
+
+        // Separator
+        let sep = NSBox(frame: NSRect(x: 20, y: 310, width: 480, height: 1))
+        sep.boxType = .separator
+        view.addSubview(sep)
+
+        // --- Local Whisper panel ---
+        let lPanel = NSView(frame: NSRect(x: 0, y: 200, width: 520, height: 110))
+
+        lPanel.addSubview(makeLabel("Model File:", x: 20, y: 80))
+
+        let pathField = NSTextField(frame: NSRect(x: 150, y: 78, width: 250, height: 24))
         pathField.stringValue = ConfigManager.shared.modelPath
         pathField.isEditable = false
         pathField.isSelectable = true
         pathField.font = .systemFont(ofSize: 11)
         pathField.lineBreakMode = .byTruncatingMiddle
         pathField.cell?.truncatesLastVisibleLine = true
-        view.addSubview(pathField)
+        lPanel.addSubview(pathField)
         modelPathField = pathField
 
-        let browseBtn = NSButton(frame: NSRect(x: 408, y: 306, width: 90, height: 28))
+        let browseBtn = NSButton(frame: NSRect(x: 408, y: 76, width: 90, height: 28))
         browseBtn.title = "Browse..."
         browseBtn.bezelStyle = .rounded
         browseBtn.target = self
         browseBtn.action = #selector(browseModelFile)
-        view.addSubview(browseBtn)
+        lPanel.addSubview(browseBtn)
 
         let statusLabel = NSTextField(labelWithString: "")
-        statusLabel.frame = NSRect(x: 150, y: 284, width: 340, height: 16)
+        statusLabel.frame = NSRect(x: 150, y: 54, width: 340, height: 16)
         statusLabel.font = .systemFont(ofSize: 11)
-        view.addSubview(statusLabel)
+        lPanel.addSubview(statusLabel)
         modelStatusLabel = statusLabel
         updateModelStatus()
 
-        view.addSubview(makeHint(
+        lPanel.addSubview(makeHint(
             "Select a whisper.cpp model file (.bin).\nDownload from huggingface.co/ggerganov/whisper.cpp",
-            x: 150, y: 250, width: 340, height: 30
+            x: 150, y: 20, width: 340, height: 30
         ))
+
+        view.addSubview(lPanel)
+        localPanel = lPanel
+
+        // --- Cloud Qwen panel ---
+        let cPanel = NSView(frame: NSRect(x: 0, y: 200, width: 520, height: 110))
+
+        cPanel.addSubview(makeLabel("API Key:", x: 20, y: 80))
+
+        let akField = NSSecureTextField(frame: NSRect(x: 150, y: 78, width: 340, height: 24))
+        akField.stringValue = ConfigManager.shared.cloudSpeechApiKey ?? ""
+        akField.font = .systemFont(ofSize: 13)
+        akField.placeholderString = "sk-..."
+        akField.delegate = self
+        cPanel.addSubview(akField)
+        cloudApiKeyField = akField
+
+        cPanel.addSubview(makeHint(
+            "Stored in Keychain, not in plain text",
+            x: 150, y: 56, width: 340
+        ))
+
+        cPanel.addSubview(makeLabel("Model:", x: 20, y: 36))
+
+        let mField = NSTextField(frame: NSRect(x: 150, y: 34, width: 340, height: 24))
+        mField.stringValue = ConfigManager.shared.cloudSpeechModel
+        mField.font = .systemFont(ofSize: 13)
+        mField.placeholderString = "qwen3-asr-flash"
+        mField.delegate = self
+        cPanel.addSubview(mField)
+        cloudModelField = mField
+
+        cPanel.addSubview(makeHint(
+            "DashScope ASR model name",
+            x: 150, y: 12, width: 340
+        ))
+
+        view.addSubview(cPanel)
+        cloudPanel = cPanel
+
+        // Set initial panel visibility
+        updateSpeechPanelVisibility()
 
         item.view = view
         return item
@@ -408,7 +488,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
                 ConfigManager.shared.modelPath = path
                 self?.modelPathField?.stringValue = path
                 self?.updateModelStatus()
-                self?.onModelPathChanged?(path)
+                self?.onSpeechEngineChanged?()
                 print("[TypeFlow] Settings: model → \(path)")
             }
         }
@@ -418,6 +498,38 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         systemPromptTextView?.string = ConfigManager.defaultSystemPrompt
         ConfigManager.shared.llmSystemPrompt = ConfigManager.defaultSystemPrompt
         print("[TypeFlow] Settings: system prompt reset to default")
+    }
+
+    @objc private func engineTypeChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem
+        if let type = SpeechEngineType(rawValue: index) {
+            ConfigManager.shared.speechEngineType = type
+            updateSpeechPanelVisibility()
+            onSpeechEngineChanged?()
+            print("[TypeFlow] Settings: engine → \(type)")
+        }
+    }
+
+    private func updateSpeechPanelVisibility() {
+        let isLocal = ConfigManager.shared.speechEngineType == .whisperLocal
+        localPanel?.isHidden = !isLocal
+        cloudPanel?.isHidden = isLocal
+    }
+
+    private func saveCloudSpeechField(_ field: NSTextField) {
+        if field === cloudApiKeyField {
+            let newKey = field.stringValue.isEmpty ? nil : field.stringValue
+            guard newKey != ConfigManager.shared.cloudSpeechApiKey else { return }
+            ConfigManager.shared.cloudSpeechApiKey = newKey
+            print("[TypeFlow] Settings: cloud speech API key saved")
+            onSpeechEngineChanged?()
+        } else if field === cloudModelField {
+            let newModel = field.stringValue
+            guard !newModel.isEmpty, newModel != ConfigManager.shared.cloudSpeechModel else { return }
+            ConfigManager.shared.cloudSpeechModel = newModel
+            print("[TypeFlow] Settings: cloud speech model saved")
+            onSpeechEngineChanged?()
+        }
     }
 
     // MARK: - Helpers

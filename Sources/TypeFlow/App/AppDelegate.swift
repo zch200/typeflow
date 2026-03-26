@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private var hotkeyManager: HotkeyManager?
     private let audioRecorder = AudioRecorder()
-    private var whisperEngine: WhisperEngine?
+    private var speechEngine: (any SpeechEngine)?
     private let llmService = LLMService()
     private let textOutputManager = TextOutputManager()
     private var floatingIndicator: FloatingIndicator?
@@ -44,12 +44,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar?.showMicPermissionHint(true)
         }
 
-        // Initialize whisper engine
-        let modelPath = ConfigManager.shared.modelPath
-        whisperEngine = WhisperEngine(modelPath: modelPath)
-        if !FileManager.default.fileExists(atPath: modelPath) {
-            print("[TypeFlow] Warning: model not found at \(modelPath)")
-            print("[TypeFlow] Download a whisper model and place it there to enable transcription")
+        // Initialize speech engine
+        speechEngine = createSpeechEngine()
+        if ConfigManager.shared.speechEngineType == .whisperLocal {
+            let modelPath = ConfigManager.shared.modelPath
+            if !FileManager.default.fileExists(atPath: modelPath) {
+                print("[TypeFlow] Warning: model not found at \(modelPath)")
+                print("[TypeFlow] Download a whisper model and place it there to enable transcription")
+            }
         }
 
         // Wire settings callbacks
@@ -96,9 +98,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            if let whisperEngine = self.whisperEngine {
-                print("[TypeFlow] Shutdown: freeing whisper context")
-                await whisperEngine.shutdown()
+            if let engine = self.speechEngine {
+                print("[TypeFlow] Shutdown: freeing speech engine")
+                await engine.shutdown()
             }
 
             print("[TypeFlow] Shutdown: complete")
@@ -259,15 +261,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.hotkeyManager?.pause()
             }
         }
-        settingsController.onModelPathChanged = { [weak self] path in
+        settingsController.onSpeechEngineChanged = { [weak self] in
             guard let self else { return }
-            let oldEngine = self.whisperEngine
-            self.whisperEngine = WhisperEngine(modelPath: path)
-            if !FileManager.default.fileExists(atPath: path) {
-                print("[TypeFlow] Warning: model not found at \(path)")
-            }
+            let oldEngine = self.speechEngine
+            self.speechEngine = self.createSpeechEngine()
+            print("[TypeFlow] Speech engine switched to \(ConfigManager.shared.speechEngineType)")
             if let oldEngine {
-                Task { await oldEngine.shutdown() }
+                Task {
+                    // Wait for any in-flight transcription before shutting down old engine
+                    await self.processingTask?.value
+                    await oldEngine.shutdown()
+                }
             }
         }
     }
@@ -325,8 +329,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cancelIndicatorHide()
         floatingIndicator?.show(phase: .processing)
 
-        guard let engine = whisperEngine else {
-            appState.showError("Whisper engine not initialized")
+        guard let engine = speechEngine else {
+            appState.showError("Speech engine not initialized")
             floatingIndicator?.show(phase: .error("Engine error"))
             scheduleIndicatorHide()
             return
@@ -385,6 +389,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func cancelIndicatorHide() {
         indicatorHideTask?.cancel()
         indicatorHideTask = nil
+    }
+
+    // MARK: - Speech Engine Factory
+
+    private func createSpeechEngine() -> any SpeechEngine {
+        switch ConfigManager.shared.speechEngineType {
+        case .whisperLocal:
+            return WhisperEngine(modelPath: ConfigManager.shared.modelPath)
+        case .qwenCloud:
+            return QwenCloudEngine(
+                endpoint: ConfigManager.shared.cloudSpeechEndpoint,
+                model: ConfigManager.shared.cloudSpeechModel,
+                apiKey: ConfigManager.shared.cloudSpeechApiKey ?? ""
+            )
+        }
     }
 }
 
