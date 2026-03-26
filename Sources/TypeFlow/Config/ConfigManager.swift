@@ -19,7 +19,44 @@ final class ConfigManager {
     // MARK: - Recording
 
     let minRecordingDuration: TimeInterval = 0.5
-    let maxRecordingDuration: TimeInterval = 300 // 5 minutes
+
+    var maxRecordingDuration: TimeInterval {
+        switch speechEngineType {
+        case .whisperLocal: return 300   // 5 minutes
+        case .qwenCloud:    return 180   // 3 minutes (PCM16 WAV base64 ≈ 7.7 MB, 留足 10 MB 余量)
+        }
+    }
+
+    // MARK: - Speech Engine
+
+    var speechEngineType: SpeechEngineType {
+        get {
+            let raw = defaults.integer(forKey: "speechEngineType")
+            return SpeechEngineType(rawValue: raw) ?? .whisperLocal
+        }
+        set { defaults.set(newValue.rawValue, forKey: "speechEngineType") }
+    }
+
+    var cloudSpeechModel: String {
+        get { defaults.string(forKey: "cloudSpeechModel") ?? "qwen3-asr-flash" }
+        set { defaults.set(newValue, forKey: "cloudSpeechModel") }
+    }
+
+    var cloudSpeechEndpoint: String {
+        get { defaults.string(forKey: "cloudSpeechEndpoint") ?? "https://dashscope.aliyuncs.com/compatible-mode" }
+        set { defaults.set(newValue, forKey: "cloudSpeechEndpoint") }
+    }
+
+    var cloudSpeechApiKey: String? {
+        get { KeychainHelper.load(service: "com.typeflow.app", account: "speech-api-key") }
+        set {
+            if let newValue {
+                KeychainHelper.save(service: "com.typeflow.app", account: "speech-api-key", data: newValue)
+            } else {
+                KeychainHelper.delete(service: "com.typeflow.app", account: "speech-api-key")
+            }
+        }
+    }
 
     // MARK: - Whisper Model
 

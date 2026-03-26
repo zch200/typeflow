@@ -116,25 +116,28 @@ class AudioRecorder {
 
 **关键接口**:
 ```swift
-protocol SpeechEngine: Actor {
+protocol SpeechEngine: Sendable {
     func transcribe(samples: [Float]) async throws -> String
-    func shutdown()
-    var engineType: SpeechEngineType { get }
+    func shutdown() async
 }
 ```
 
+- `Sendable` 而非 `Actor` — WhisperEngine 是独立 actor，QwenCloudEngine 也是独立 actor，两者都自动满足 Sendable
+- 不含 `engineType` 属性，类型信息由 ConfigManager 管理
+- 不定义统一错误类型，各引擎保留自己的 Error
+
 **当前支持的引擎**:
 
-| 引擎 | 类型 | 说明 |
-|------|------|------|
-| WhisperEngine | 本地 | whisper.cpp + GGML 模型，初版实现 |
-| QwenCloudEngine | 云端 | 百炼 qwen3-asr-flash API |
-| QwenLocalEngine | 本地 | Qwen3-ASR 本地推理（规划中） |
+| 引擎 | 类型 | 隔离方式 | 说明 |
+|------|------|----------|------|
+| WhisperEngine | 本地 | 独立 actor | whisper.cpp + GGML 模型，懒加载，空闲 5 分钟释放 |
+| QwenCloudEngine | 云端 | 独立 actor | 百炼 qwen3-asr-flash，PCM16 WAV + base64 上传，30s 超时 |
+| QwenLocalEngine | 本地 | — | Qwen3-ASR 本地推理（规划中） |
 
 **通用行为**:
 - 本地引擎：懒加载模型，空闲 5 分钟自动释放内存
-- 云端引擎：无状态，每次转写独立请求
-- 所有引擎内部使用 Actor 隔离，保证线程安全
+- 云端引擎：无状态，每次转写独立请求；配置值（endpoint/model/apiKey）在 init 时快照传入
+- 所有引擎使用独立 actor 隔离，CPU 密集操作不阻塞 MainActor
 
 > 引擎选型详情、候选方案对比、演进路径见 [ASR 引擎技术选型文档](asr-engine-selection.md)。
 
@@ -251,7 +254,9 @@ class TextOutputManager {
 | 快捷键 | Left Option | UserDefaults |
 | ASR 引擎类型 | whisperLocal | UserDefaults |
 | 本地模型路径 | `~/Library/Application Support/TypeFlow/Models/` | UserDefaults |
-| ASR 云端 API Key | (复用 LLM Key) | Keychain |
+| ASR 云端 API Key | (无) | Keychain（独立条目 account: "speech-api-key"） |
+| ASR 云端模型 | qwen3-asr-flash | UserDefaults |
+| ASR 云端 Endpoint | 阿里百炼地址 | UserDefaults |
 | LLM Endpoint | 阿里百炼地址 | UserDefaults |
 | LLM Model | qwen-turbo | UserDefaults |
 | LLM API Key | (无) | Keychain |
