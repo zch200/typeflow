@@ -17,7 +17,7 @@ enum WhisperError: Error, CustomStringConvertible {
     }
 }
 
-actor WhisperEngine {
+actor WhisperEngine: SpeechEngine {
     private var context: OpaquePointer?
     private var idleTask: Task<Void, Never>?
     private let modelPath: String
