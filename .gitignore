@@ -11,3 +11,4 @@ DerivedData/
 /Libraries/whisper.cpp/build/
 *.o
 *.a
+/prompt-tuning/

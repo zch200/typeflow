@@ -36,7 +36,7 @@ final class LLMService {
                 ["role": "system", "content": config.llmSystemPrompt],
                 ["role": "user", "content": text],
             ],
-            "temperature": 0.3,
+            "temperature": 0.2,
         ]
 
         do {
