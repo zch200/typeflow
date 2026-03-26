@@ -55,4 +55,13 @@ if command -v codesign >/dev/null 2>&1; then
     codesign --force --sign - --timestamp=none "$APP_DIR"
 fi
 
-echo "Built $APP_DIR (v${VERSION})"
+# Install to /Applications (update in place), then remove dist copy
+# to avoid duplicate Spotlight entries.
+INSTALL_DIR="/Applications/${APP_NAME}.app"
+if [ -d "$INSTALL_DIR" ]; then
+    rm -rf "$INSTALL_DIR"
+fi
+cp -R "$APP_DIR" "$INSTALL_DIR"
+rm -rf "$APP_DIR"
+
+echo "Installed $INSTALL_DIR (v${VERSION})"

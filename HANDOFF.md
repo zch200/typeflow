@@ -1,20 +1,21 @@
 # 项目交接状态
-最后更新: 2026-03-26 会话主题: Step 5-6 审查通过并提交
+最后更新: 2026-03-26 会话主题: 端到端验证 + 权限/终端/安装优化
 
 ## 当前进展
 - [已完成] 阶段 1-6：基础功能全部开发完成
-- [已完成] ASR 引擎技术选型调研 + 设计文档 + 实施计划
-- [已完成] Step 1-2：SpeechEngine protocol + WhisperEngine conformance
-- [已完成] Step 3-4：ConfigManager 配置项 + QwenCloudEngine
-- [已完成] Step 5-6：AppDelegate 引擎工厂 + Settings Speech 标签页重构（已审查通过）
+- [已完成] ASR 引擎选型全部 6 步
+- [已完成] 设计文档同步更新（technical-design.md + asr-engine-selection.md）
+- [已完成] 权限体验优化：AX 签名失配自动 tccutil reset、麦克风启动时请求、Keychain 弹窗抑制
+- [已完成] 终端应用修复：L1 AXSelectedText 假阳性检测，终端正确降级到 Cmd+V 粘贴
+- [已完成] 应用安装：build_app.sh 自动安装到 /Applications，配置开机自启
 
 ## 关键设计决策
-- SpeechEngine protocol（Sendable，非 Actor），WhisperEngine + QwenCloudEngine 两种实现
-- AppDelegate.speechEngine 类型为 `(any SpeechEngine)?`，通过 createSpeechEngine() 工厂创建
-- 引擎切换语义："只影响下一次录音"，旧引擎等 processingTask 完成后再 shutdown
-- 云端字段保存带脏检查，值未变不触发引擎重建
+- AX 签名失配 → tccutil reset + 重新弹出授权对话框
+- 麦克风权限在启动时主动请求，避免首次授权时进程被杀
+- Keychain 用 LAContext(interactionNotAllowed) 抑制旧签名条目弹窗
+- L1 写入后验证 AXValue 是否变化，捕获终端等应用的假阳性
+- build_app.sh 安装后清理 dist 副本，避免 Spotlight 重复
 
 ## 下次会话建议
-- ASR 引擎选型计划全部完成，可进入端到端手动验证
-- 可考虑后续：technical-design.md 同步更新（ASR API Key 独立条目描述）
-- 可考虑后续：本地 Qwen3-ASR 引擎扩展
+- 手动验证云端 Qwen ASR 引擎完整流程（填入 API Key → 录音 → 转写）
+- 可考虑后续：本地 Qwen3-ASR 引擎扩展（mlx-swift-asr）
